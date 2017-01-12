@@ -454,6 +454,11 @@ func convertFiles(inDirectory: String, outDirectory: String) {
     }
 }
 
+func removeTempFiles(outDirectory: String) {
+    let output = shell(arguments: ["find", outDirectory, "-name", "*.\(FileExtension.tmp.rawValue)", "-type", "f", "-delete"])
+    print(output.0!)
+}
+
 func main() {
     let arguments = CommandLine.arguments
     //print("arguments: \(arguments)")
@@ -462,6 +467,7 @@ func main() {
         print("It converts any lossless files to mp3 and just copies any lossy files")
         print("Usage: \(arguments[0]) inputFolderPath outputFolderPath")
     } else {
+        removeTempFiles(outDirectory: CommandLine.arguments[2])
         convertFiles(inDirectory: arguments[1], outDirectory: arguments[2])
     }
     
@@ -469,6 +475,3 @@ func main() {
 }
 
 main()
-
-//convertFiles(inDirectory: "/Users/bbaron/Desktop/testfiles", outDirectory: "/Users/bbaron/Desktop/convertedfiles")
-//let _ = Tags(filePath: "/Users/bbaron/Desktop/test.flac")
