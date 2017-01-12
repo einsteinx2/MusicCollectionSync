@@ -69,10 +69,10 @@ func shell(inPipe: Pipe = Pipe(), arguments: [String]) -> (String?, String?, Int
     task.standardOutput = outPipe
     task.standardError = errPipe
     task.launch()
-    task.waitUntilExit()
-    
     let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
     let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+    task.waitUntilExit()
+    
     let outputString = String(data: outData, encoding: .utf8)
     let errorString = errData.count > 0 ? String(data: errData, encoding: .utf8) : nil
     return (outputString, errorString, task.terminationStatus)
