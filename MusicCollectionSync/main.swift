@@ -30,12 +30,10 @@ let lamePath = "/usr/bin/lame"
 let flacPath = "/usr/bin/flac"
 #endif
 
-let concurrentOperations = 8
-
 let fileManager = FileManager.default
 
 let operationQueue = OperationQueue()
-operationQueue.maxConcurrentOperationCount = concurrentOperations
+operationQueue.maxConcurrentOperationCount = 8
 
 func outPipeShell(arguments: [String]) -> (Pipe, Pipe) {
     #if os(OSX)
@@ -55,7 +53,7 @@ func outPipeShell(arguments: [String]) -> (Pipe, Pipe) {
     return (outPipe, errPipe)
 }
 
-func shell(inPipe: Pipe? = nil, arguments: [String]) -> (String?, String?, Int32)
+func shell(inPipe: Pipe = Pipe(), arguments: [String]) -> (String?, String?, Int32)
 {
     #if os(OSX)
         let task = Process()
@@ -392,10 +390,6 @@ func convertUncompressed(name: String, fileExtension: FileExtension, inDirectory
 
 func convertFile(name: String, fileExtension: FileExtension, inDirectory: String, outDirectory: String) {
     do {
-        if !fileManager.fileExists(atPath: outDirectory) {
-            try fileManager.createDirectory(atPath: outDirectory, withIntermediateDirectories: true, attributes: nil)
-        }
-        
         let fullInPath = fullPath(directory: inDirectory, fileName: name)
         let fullOutPath = fullPath(directory: outDirectory, fileName: outputFileName(forFileName: name))
         if fileManager.fileExists(atPath: fullOutPath) {
@@ -405,7 +399,11 @@ func convertFile(name: String, fileExtension: FileExtension, inDirectory: String
             convertUncompressed(name: name, fileExtension: fileExtension, inDirectory: inDirectory, outDirectory: outDirectory)
         } else {
             print("copying \(name) from: \(inDirectory) to: \(outDirectory)")
-            try fileManager.copyItem(atPath: fullInPath, toPath: fullOutPath)
+            #if os(OSX)
+                try fileManager.copyItem(atPath: fullInPath, toPath: fullOutPath)
+            #else
+                _ = shell(arguments: ["cp", fullInPath, fullOutPath])
+            #endif
         }
     } catch {
         print("convertFile error: \(error)")
@@ -415,6 +413,10 @@ func convertFile(name: String, fileExtension: FileExtension, inDirectory: String
 func convertFiles(inDirectory: String, outDirectory: String) {
     var directories = [String]()
     do {
+        if !fileManager.fileExists(atPath: outDirectory) {
+            try fileManager.createDirectory(atPath: outDirectory, withIntermediateDirectories: true, attributes: nil)
+        }
+        
         let fileNames = try fileManager.contentsOfDirectory(atPath: inDirectory)
         for fileName in fileNames {
             if fileName == ".DS_Store" {
@@ -423,20 +425,21 @@ func convertFiles(inDirectory: String, outDirectory: String) {
             
             let fullInPath = fullPath(directory: inDirectory, fileName: fileName)
             let fullInUrl = URL(fileURLWithPath: fullInPath)
-            let fullOutPath = fullPath(directory: outDirectory, fileName: fileName)
-            let fileOutUrl = URL(fileURLWithPath: fullOutPath)
-            if let fileExtension = FileExtension(rawValue: fileOutUrl.pathExtension) {
+            if let fileExtension = FileExtension(rawValue: fullInUrl.pathExtension) {
+                print("queueing \(fullInPath)")
                 operationQueue.addOperation{
                     convertFile(name: fileName, fileExtension: fileExtension, inDirectory: inDirectory, outDirectory: outDirectory)
                 }
             } else {
-                do {
-                    let resourceValues = try fullInUrl.resourceValues(forKeys: [.isDirectoryKey])
-                    if let isDirectory = resourceValues.isDirectory, isDirectory {
-                        directories.append(fileName)
-                    }
-                } catch {
-                    print("convertFiles error reading resourceValues from path: \(fullInPath) error: \(error)")
+                var isDirectoryOutput: ObjCBool = false
+                _ = fileManager.fileExists(atPath: fullInPath, isDirectory: &isDirectoryOutput)
+                #if os(OSX)
+                    let isDirectory = isDirectoryOutput.boolValue
+                #else
+                    let isDirectory = isDirectoryOutput
+                #endif
+                if isDirectory {
+                    directories.append(fileName)
                 }
             }
         }
