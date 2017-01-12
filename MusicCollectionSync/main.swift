@@ -166,7 +166,11 @@ struct Tags {
         for line in lines {
             let components = line.components(separatedBy: ":")
             if components.count > 1 {
-                let tagString = components[0].trimmingCharacters(in: .whitespaces)
+                var tagString = components[0].trimmingCharacters(in: .whitespaces)
+                #if !os(OSX)
+                    // Fix for trimmingCharacters bug in Linux where it removes trailing r's
+                    tagString = (tagString == "Performe" ? "Performer" : tagString)
+                #endif
                 if let tag = TagType(rawValue: tagString) {
                     var value = components[1]
                     if components.count > 2 {
@@ -176,7 +180,7 @@ struct Tags {
                     }
                     value = value.trimmingCharacters(in: .whitespaces)
                     
-                    if value.characters.count > 0 {
+                    if value.characters.count > 0 && !tagDict.keys.contains(tag) {
                         tagDict[tag] = value
                     }
                 }
