@@ -31,7 +31,6 @@ let flacPath = "/usr/bin/flac"
 #endif
 
 let fileManager = FileManager.default
-
 let operationQueue = OperationQueue()
 operationQueue.maxConcurrentOperationCount = 8
 
@@ -46,6 +45,7 @@ func outPipeShell(arguments: [String]) -> (Pipe, Pipe) {
     
     let outPipe = Pipe()
     let errPipe = Pipe()
+    task.standardInput = Pipe()
     task.standardOutput = outPipe
     task.standardError = errPipe
     task.launch()
@@ -93,6 +93,8 @@ enum FileExtension: String {
     case m4a  = "m4a"
     case mp4  = "mp4"
     case mp3  = "mp3"
+    
+    case tmp  = "tmp"
     
     var isLossless: Bool {
         return self == .aiff || self == .aif || self == .wave || self == .wav || self == .flac
@@ -319,6 +321,8 @@ func lameTagOptions(fromTags tags: Tags?, coverArtPath: String?) -> [String] {
 }
 
 func lameCommand(input: String, output: String, tags: Tags?, coverArtPath: String?) -> [String] {
+    let tagOptions = lameTagOptions(fromTags: tags, coverArtPath: coverArtPath)
+    
     var arguments = [String]()
     arguments.append(lamePath)
     arguments.append("--silent")
@@ -327,7 +331,7 @@ func lameCommand(input: String, output: String, tags: Tags?, coverArtPath: Strin
     arguments.append("--noreplaygain")
     arguments.append("-V")
     arguments.append("0")
-    arguments.append(contentsOf: lameTagOptions(fromTags: tags, coverArtPath: coverArtPath))
+    arguments.append(contentsOf: tagOptions)
     arguments.append(input)
     arguments.append(output)
     return arguments
@@ -341,15 +345,20 @@ func outputFileName(forFileName fileName: String) -> String {
     let url = NSURL(fileURLWithPath: fileName)
     if let pathExtension = url.pathExtension, let fileExtension = FileExtension(rawValue: pathExtension), fileExtension.isLossless {
         if let nameWithoutExtension = url.deletingPathExtension?.relativeString.removingPercentEncoding {
-            return nameWithoutExtension + ".mp3"
+            return nameWithoutExtension + "." + FileExtension.mp3.rawValue
         }
     }
     
     return fileName
 }
 
+func tempOutputFileName(forFileName fileName: String) -> String {
+    return outputFileName(forFileName: fileName) + "." + FileExtension.tmp.rawValue
+}
+
 func convertUncompressed(name: String, fileExtension: FileExtension, inDirectory: String, outDirectory: String) {
     let fullInPath = fullPath(directory: inDirectory, fileName: name)
+    let fullTempOutPath = fullPath(directory: outDirectory, fileName: tempOutputFileName(forFileName: name))
     let fullOutPath = fullPath(directory: outDirectory, fileName: outputFileName(forFileName: name))
     let tags = Tags(filePath: fullInPath)
     var coverArtExists = false
@@ -368,19 +377,25 @@ func convertUncompressed(name: String, fileExtension: FileExtension, inDirectory
     var errorString: String? = nil
     if fileExtension == .flac {
         let flacArguments = [flacPath, "-cd", fullInPath]
-        let lameArguments = lameCommand(input: "-", output: fullOutPath, tags: tags, coverArtPath: coverArtPath)
+        let lameArguments = lameCommand(input: "-", output: fullTempOutPath, tags: tags, coverArtPath: coverArtPath)
         let flacOut = outPipeShell(arguments: flacArguments)
         let lameOut = shell(inPipe: flacOut.0, arguments: lameArguments)
         errorString = lameOut.1
         
     } else {
-        let lameArguments = lameCommand(input: fullInPath, output: fullOutPath, tags: tags, coverArtPath: coverArtPath)
+        let lameArguments = lameCommand(input: fullInPath, output: fullTempOutPath, tags: tags, coverArtPath: coverArtPath)
         let lameOut = shell(arguments: lameArguments)
         errorString = lameOut.1
     }
     
     if let errorString = errorString {
         print("Error converting file at path: \(fullInPath) error: \(errorString)")
+    } else {
+        do {
+            try fileManager.moveItem(atPath: fullTempOutPath, toPath: fullOutPath)
+        } catch {
+            print("Error moving temp file at path: \(fullTempOutPath) to path: \(fullOutPath) error: \(error)")
+        }
     }
     
     if coverArtExists, let coverArtPath = coverArtPath {
@@ -395,6 +410,7 @@ func convertUncompressed(name: String, fileExtension: FileExtension, inDirectory
 func convertFile(name: String, fileExtension: FileExtension, inDirectory: String, outDirectory: String) {
     do {
         let fullInPath = fullPath(directory: inDirectory, fileName: name)
+        let fullTempOutPath = fullPath(directory: outDirectory, fileName: tempOutputFileName(forFileName: name))
         let fullOutPath = fullPath(directory: outDirectory, fileName: outputFileName(forFileName: name))
         if fileManager.fileExists(atPath: fullOutPath) {
             print("skipping \(name) because it already exists")
@@ -404,7 +420,8 @@ func convertFile(name: String, fileExtension: FileExtension, inDirectory: String
         } else {
             print("copying \(name) from: \(inDirectory) to: \(outDirectory)")
             #if os(OSX)
-                try fileManager.copyItem(atPath: fullInPath, toPath: fullOutPath)
+                try fileManager.copyItem(atPath: fullInPath, toPath: fullTempOutPath)
+                try fileManager.moveItem(atPath: fullTempOutPath, toPath: fullOutPath)
             #else
                 _ = shell(arguments: ["cp", fullInPath, fullOutPath])
             #endif
@@ -430,9 +447,12 @@ func convertFiles(inDirectory: String, outDirectory: String) {
             let fullInPath = fullPath(directory: inDirectory, fileName: fileName)
             let fullInUrl = URL(fileURLWithPath: fullInPath)
             if let fileExtension = FileExtension(rawValue: fullInUrl.pathExtension) {
-                print("queueing \(fullInPath)")
-                operationQueue.addOperation{
-                    convertFile(name: fileName, fileExtension: fileExtension, inDirectory: inDirectory, outDirectory: outDirectory)
+                if fileExtension == .tmp {
+                    continue
+                } else {
+                    operationQueue.addOperation{
+                        convertFile(name: fileName, fileExtension: fileExtension, inDirectory: inDirectory, outDirectory: outDirectory)
+                    }
                 }
             } else {
                 var isDirectoryOutput: ObjCBool = false
