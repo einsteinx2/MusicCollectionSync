@@ -14,21 +14,35 @@
 // 5. Add ability to remove files from output directory that don't exist in the input directory
 // 6. Support more lame encoder options
 // 7. Support more output formats
-// 8. Support multithreading for encoding
 // 9. Don't hard code paths
 // 10. Return stderr when exit code is not 0
 // 11. Add ability to view LAME status output
 
 import Foundation
 
+#if os(OSX)
 let mediainfoPath = "/usr/local/bin/mediainfo"
 let lamePath = "/usr/local/bin/lame"
 let flacPath = "/usr/local/bin/flac"
+#else
+let mediainfoPath = "/usr/bin/mediainfo"
+let lamePath = "/usr/bin/lame"
+let flacPath = "/usr/bin/flac"
+#endif
+
+let concurrentOperations = 8
 
 let fileManager = FileManager.default
 
+let operationQueue = OperationQueue()
+operationQueue.maxConcurrentOperationCount = concurrentOperations
+
 func outPipeShell(arguments: [String]) -> (Pipe, Pipe) {
-    let task = Process()
+    #if os(OSX)
+        let task = Process()
+    #else
+        let task = Task()
+    #endif
     task.launchPath = "/usr/bin/env"
     task.arguments = arguments
     
@@ -43,7 +57,11 @@ func outPipeShell(arguments: [String]) -> (Pipe, Pipe) {
 
 func shell(inPipe: Pipe? = nil, arguments: [String]) -> (String?, String?, Int32)
 {
-    let task = Process()
+    #if os(OSX)
+        let task = Process()
+    #else
+        let task = Task()
+    #endif
     task.launchPath = "/usr/bin/env"
     task.arguments = arguments
     
@@ -408,7 +426,9 @@ func convertFiles(inDirectory: String, outDirectory: String) {
             let fullOutPath = fullPath(directory: outDirectory, fileName: fileName)
             let fileOutUrl = URL(fileURLWithPath: fullOutPath)
             if let fileExtension = FileExtension(rawValue: fileOutUrl.pathExtension) {
-                convertFile(name: fileName, fileExtension: fileExtension, inDirectory: inDirectory, outDirectory: outDirectory)
+                operationQueue.addOperation{
+                    convertFile(name: fileName, fileExtension: fileExtension, inDirectory: inDirectory, outDirectory: outDirectory)
+                }
             } else {
                 do {
                     let resourceValues = try fullInUrl.resourceValues(forKeys: [.isDirectoryKey])
@@ -441,6 +461,8 @@ func main() {
     } else {
         convertFiles(inDirectory: arguments[1], outDirectory: arguments[2])
     }
+    
+    operationQueue.waitUntilAllOperationsAreFinished()
 }
 
 main()
