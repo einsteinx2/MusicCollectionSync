@@ -17,6 +17,7 @@
 // 9. Don't hard code paths
 // 10. Return stderr when exit code is not 0
 // 11. Add ability to view LAME status output
+// 12. Fix "fatal error: Could not open pipe file handles: file Foundation/NSFileHandle.swift, line 336" on linux
 
 import Foundation
 
