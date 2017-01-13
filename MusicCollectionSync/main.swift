@@ -94,6 +94,7 @@ enum FileExtension: String {
     case m4a  = "m4a"
     case mp4  = "mp4"
     case mp3  = "mp3"
+    case ogg  = "ogg"
     
     case tmp  = "tmp"
     
@@ -108,6 +109,7 @@ enum FormatType: String {
     case flac = "FLAC"
     case mp3  = "MPEG Audio"
     case m4a  = "MPEG-4"
+    case ogg  = "Ogg"
     
     case unsupported = "unsupported"
 }
