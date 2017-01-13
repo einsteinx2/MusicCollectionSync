@@ -17,6 +17,8 @@ Let's say you have a huge lossless music collection. Maybe you're a DJ and you h
 ### Linux
 1. Install dependencies
    * Run `apt-get install flac lame mediainfo` or the similar command for your distro
+   * Install Swift 3: https://swift.org/download
+2. Run the script
    * For some reason it can't find the CoreFoundation library when run as a script, so you have to compile it first by running `swiftc main.swift`
    * Run the script: `./main inDirectory outDirectory`
 
